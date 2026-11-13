@@ -15,3 +15,13 @@ class PacienteVista(BaseModel):
     segundo_apellido: Optional[str] = None
     fecha_nacimiento: Optional[str] = None
     sexo: Optional[str] = None
+
+    @property
+    def nombre_completo(self) -> str:
+        partes = [
+            self.primer_nombre,
+            self.segundo_nombre,
+            self.primer_apellido,
+            self.segundo_apellido,
+        ]
+        return " ".join(p for p in partes if p)

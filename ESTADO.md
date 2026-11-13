@@ -1,7 +1,7 @@
 # ESTADO DEL PROYECTO - Visor IHCE + Gestión Farmacéutica Colombia
 
 ## Última actualización
-Fecha: 2026-10-30
+Fecha: 2026-11-04
 
 ## Resumen de un vistazo
 
@@ -9,11 +9,11 @@ Fecha: 2026-10-30
 | :-- | :-- |
 | 0.1 Infraestructura base (config, auth, HTTP, /health) | CERRADO |
 | 0.2 Cliente IHCE + contrato de vista de paciente | CERRADO |
-| 0.3 Mapper `Patient -> PacienteVista` | NO INICIADO |
+| 0.3 Mapper `Patient -> PacienteVista` | CERRADO |
 | 0.4 Servicio de pacientes (Bundle -> lista de vistas) | NO INICIADO |
 | 0.5 API + UI (router y plantillas) | NO INICIADO |
 
-Ultima accion realizada: validacion manual en REPL del flujo real (token + `$consultar-paciente-similar` + lectura del `Patient` devuelto).
+Ultima accion realizada: `mapear_paciente()` validado de punta a punta con datos ficticios (paciente completo y paciente vacio).
 
 ---
 
@@ -31,7 +31,8 @@ Ultima accion realizada: validacion manual en REPL del flujo real (token + `$con
 - [x] Imports relativos corregidos a `app.core.*`
 - [x] `.env` copiado desde `AutomatedUatIHCE` (local, no versionado)
 - [x] `.gitignore` y `.env.example` creados
-- [x] Git inicializado
+- [x] Git inicializado y repositorio publicado en `github.com/DiegoTorresUSA/visor-ihce-gf`
+- [x] `README.md` creado, con auditoria de secretos (`.env` nunca commiteado)
 - [x] `app/main.py` con `GET /health`
 - [x] Validado con uvicorn: `/health` y `/docs` responden
 
@@ -41,40 +42,62 @@ Codigo:
 
 - [x] `app/integrations/ihce/patient.py` con `consultar_paciente_similar()` y `consultar_paciente_exacto()`, usando `fhir.post(token, path, json_body=...)`
 - [x] `app/schemas/request/paciente_request.py` con `ConsultaPacienteSimilar` y `ConsultaPacienteExacto` (ambos con `usuario_humano` y `crear_json_fhir()`)
-- [x] `app/schemas/view/paciente_view.py` con `PacienteVista` (9 campos, todos `Optional[str]`)
+- [x] `app/schemas/view/paciente_view.py` con `PacienteVista` (9 campos `Optional[str]`)
 
 Validaciones realizadas:
 
 - [x] `obtener_token_valido()` devuelve un token `str` valido contra el tenant
-- [x] `crear_json_fhir()` genera un `Parameters` identico al body usado en Postman (`identifier.part` + `humanuser`)
+- [x] `crear_json_fhir()` genera un `Parameters` identico al body de Postman (`identifier.part` + `humanuser`)
 - [x] La llamada real a `$consultar-paciente-similar` devuelve un `Bundle` con recursos `Patient`
 - [x] `$consultar-paciente-exacto` devuelve un `Patient` suelto, no un `Bundle`
-- [x] El `Bundle` puede traer mas de un paciente
 
-Hallazgos de estructura real del `Patient` (documentados, no inventados):
+Hallazgos de estructura real del `Patient`:
 
-- [x] `name[]`: `use` (`official`), `family` concatenado (`"TORRES ARDILA"`), `_family.extension[]` con `ExtensionFathersFamilyName` (`TORRES`) y `ExtensionMothersFamilyName` (`ARDILA`), `given[]` ordenado (`["DIEGO","ARMANDO"]`)
+- [x] `name[]`: `use` (`official`), `family` concatenado, `_family.extension[]` con `ExtensionFathersFamilyName` y `ExtensionMothersFamilyName`, `given[]` ordenado
 - [x] `identifier[]`: `use` (`official`), `type.coding[]` con dos codings (`v2-0203/PN` generico y `ColombianPersonIdentifier/CC`), `system` RNEC y `value`
-- [x] Contrato de mapeo `Patient -> PacienteVista` cerrado (ver seccion siguiente)
+
+### 0.3 - Mapper `Patient -> PacienteVista` (CERRADO)
+
+Codigo:
+
+- [x] `PacienteVista` ampliado con `@property nombre_completo` (concatenacion filtrada, no entra en `model_dump()`)
+- [x] `app/integrations/ihce/paciente_mapper.py` creado con las constantes del dominio:
+  - `URL_APELLIDO_PATERNO`
+  - `URL_APELLIDO_MATERNO`
+  - `SISTEMA_TIPO_DOCUMENTO`
+- [x] Helpers privados:
+  - `_elegir_nombre(nombres)` -> HumanName oficial, fallback al primero, `{}` si vacio
+  - `_valor_extension(extensiones, url)` -> `valueString` o `None`
+  - `_apellidos(nombre)` -> `(primer_apellido, segundo_apellido)` con fallback a `family` sin partir
+  - `_nombres(nombre)` -> `(primer_nombre, segundo_nombre)` desde `given[]`
+  - `_documento(identifiers)` -> `(tipo, numero)`; prefiere `use=official` y exige el CodeSystem colombiano
+- [x] Funcion publica `mapear_paciente(patient) -> PacienteVista`
+
+Validaciones realizadas (datos ficticios, sin red):
+
+- [x] `nombre_completo`: completo, parcial y modelo vacio (sin doble espacio, sin `TypeError`)
+- [x] `_apellidos`: extensiones, solo `family`, y diccionario vacio
+- [x] `_nombres`: dos nombres, uno, ninguno, y tres (el resto se une en el segundo)
+- [x] `_documento`: pasaporte antes que CC oficial, lista vacia, identificador sin `type`
+- [x] `mapear_paciente`: paciente completo mapea los 9 campos; `{}` devuelve todos en `None`
+
+Errores de aprendizaje documentados:
+
+- [x] `return` mal indentado dentro del `for` cortaba la busqueda en la primera vuelta
+- [x] El REPL conserva modulos en `sys.modules`: hay que reiniciar el interprete o usar `importlib.reload`
+- [x] Diferencia entre `Response` crudo, `Bundle` y `Patient`: el mapper solo recibe el `Patient`
 
 ---
 
 ## QUE FALTA
 
-### 0.3 - Mapper `Patient -> PacienteVista` (NO INICIADO)
-
-- [ ] 0.3.1 Agregar `@property nombre_completo` a `PacienteVista`
-- [ ] 0.3.2 Crear `app/integrations/ihce/paciente_mapper.py` con las URLs de extension y CodeSystem como constantes
-- [ ] 0.3.3 Extraer apellidos desde `_family.extension` (con fallback a `family`)
-- [ ] 0.3.4 Extraer nombres desde `given[]`
-- [ ] 0.3.5 Extraer `identifier` (filtrar por CodeSystem colombiano, preferir `use=official`)
-- [ ] 0.3.6 Ensamblar el `PacienteVista` completo y validarlo contra el `Patient` real ya obtenido (sin volver a llamar al mecanismo)
-
 ### 0.4 - Servicio de pacientes (NO INICIADO)
 
-- [ ] Servicio que recorra `Bundle.entry[]`, aplique el mapper y devuelva `list[PacienteVista]`
+- [ ] `app/services/paciente_service.py` con `buscar_paciente_similar(...)` -> `list[PacienteVista]`
+- [ ] `app/services/paciente_service.py` con `consultar_paciente_exacto(...)` -> `PacienteVista`
+- [ ] Recorrer `Bundle.entry[]` y aplicar `mapear_paciente` a cada `resource`
 - [ ] Manejo explicito de `Bundle` vacio (`total = 0`)
-- [ ] Manejo explicito de error HTTP y de respuesta no JSON
+- [ ] Manejo explicito de error HTTP y de respuesta no JSON (sin `except` amplios)
 
 ### 0.5 - API + UI (NO INICIADO)
 
@@ -85,7 +108,9 @@ Hallazgos de estructura real del `Patient` (documentados, no inventados):
 
 ### Pendientes transversales
 
-- [ ] Commit de los cambios actuales (`ESTADO.md`, `PROMPT_MENTOR.md`, `app/integrations/ihce/patient.py`, `app/schemas/request/`, `app/schemas/view/paciente_view.py`)
+- [ ] Quitar el `print("revisando:", ...)` de depuracion en `_valor_extension`
+- [ ] Corregir estilo: `def _documento (identifiers...)` -> `def _documento(identifiers...)`
+- [ ] Commit del incremento 0.3
 - [ ] Confirmar que `.env` sigue fuera de Git
 - [ ] `app/schemas/fhir/` esta creado pero vacio: decidir si se usa para modelos de recursos FHIR o se elimina
 
@@ -122,10 +147,10 @@ URLs confirmadas:
 2. Validar que el entorno sigue sano:
 
 ```bash
-py -c "from app.schemas.request.paciente_request import ConsultaPacienteSimilar, ConsultaPacienteExacto; from app.schemas.view.paciente_view import PacienteVista; print('IMPORTS OK')"
+py -c "from app.schemas.request.paciente_request import ConsultaPacienteSimilar, ConsultaPacienteExacto; from app.schemas.view.paciente_view import PacienteVista; from app.integrations.ihce.paciente_mapper import mapear_paciente; print('IMPORTS OK')"
 ```
 
-3. Continuar por **0.3.1** (`@property nombre_completo`).
+3. Continuar por **0.4** (servicio de pacientes).
 
 ---
 
@@ -135,9 +160,9 @@ py -c "from app.schemas.request.paciente_request import ConsultaPacienteSimilar,
 - Ir un paso a la vez; un incremento pequeno por turno
 - Mantener coherencia con `AutomatedUatIHCE`
 - Codigo minimo, explicar primero, preguntar si hay duda
-- La validacion funcional de `AutomatedUatIHCE/features/patient.feature` paso: 3 escenarios y 12 pasos sin fallos
-- Esa prueba solo valida `resourceType == "Bundle"`; no valida los campos internos del paciente
 - El mapper debe vivir en `app/integrations/ihce/`, no en el modelo de vista ni en el router: es capa anticorrupcion de protocolo
+- `mapear_paciente` no hace HTTP: recibe un `Patient` ya descargado. La red es responsabilidad del servicio.
 - `identifier` es 0..* y puede venir vacio: nunca indexar `[0]` sin comprobar
 - `name` es 0..*: filtrar por `use=official` y caer al primero solo como fallback
-- El status code de la llamada real no quedo anotado explicitamente; la validacion fue funcional (devolvio datos)
+- La fuente es autoritativa (maestro de personas / RNEC), pero "autoritativo" no implica "siempre completo": el fallback cubre ausencia, no desconfianza
+- Mientras se trabaja en REPL, reiniciar el interprete tras editar un modulo ya importado
