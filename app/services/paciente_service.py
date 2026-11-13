@@ -1,6 +1,4 @@
 import json
-
-from requests import RequestException
 from app.core.token_manager import obtener_token_valido
 from app.integrations.ihce.patient import consultar_paciente_exacto, consultar_paciente_similar
 from app.integrations.ihce.paciente_mapper import mapear_paciente

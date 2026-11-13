@@ -30,7 +30,6 @@ def _valor_extension(extensiones: list[dict], url: str) -> str | None:
         Si no existe, devuelve None.
     """
     for extension in extensiones:
-        print("revisando:", extension.get("url"))
         if extension.get("url") == url:
             return extension.get("valueString")
     return None
@@ -63,7 +62,7 @@ def _nombres(nombre: dict) -> tuple[str | None, str | None]:
     return partes[0], " ".join(partes[1:])
 
 
-def _documento (identifiers: list[dict]) -> tuple[str | None, str | None]:
+def _documento(identifiers: list[dict]) -> tuple[str | None, str | None]:
     """
     Devuelve (tipo_documento, numero_documento).
     Prefiere los identifiers oficiales y el coding del CodeSystem colombiano.

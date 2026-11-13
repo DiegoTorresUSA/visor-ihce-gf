@@ -1,7 +1,8 @@
 # ESTADO DEL PROYECTO - Visor IHCE + Gestión Farmacéutica Colombia
 
 ## Última actualización
-Fecha: 2026-11-04
+Fecha: 2026-11-12
+Commit de referencia: `6369381` (0.3 completo + 0.4 parcial)
 
 ## Resumen de un vistazo
 
@@ -10,10 +11,12 @@ Fecha: 2026-11-04
 | 0.1 Infraestructura base (config, auth, HTTP, /health) | CERRADO |
 | 0.2 Cliente IHCE + contrato de vista de paciente | CERRADO |
 | 0.3 Mapper `Patient -> PacienteVista` | CERRADO |
-| 0.4 Servicio de pacientes (Bundle -> lista de vistas) | NO INICIADO |
+| 0.4 Servicio de pacientes (Bundle -> lista de vistas) | EN CURSO (1 de 3 métodos) |
 | 0.5 API + UI (router y plantillas) | NO INICIADO |
 
-Ultima accion realizada: `mapear_paciente()` validado de punta a punta con datos ficticios (paciente completo y paciente vacio).
+Ultima accion realizada: limpieza del servicio y del mapper (imports muertos, `print` de depuracion, estilo de `_documento`) y documentacion del estado real de 0.4.
+
+Proximo paso: validar `_consultar` con un cliente falso (4 casos, sin red) y luego implementar `buscar_similar`.
 
 ---
 
@@ -72,6 +75,7 @@ Codigo:
   - `_nombres(nombre)` -> `(primer_nombre, segundo_nombre)` desde `given[]`
   - `_documento(identifiers)` -> `(tipo, numero)`; prefiere `use=official` y exige el CodeSystem colombiano
 - [x] Funcion publica `mapear_paciente(patient) -> PacienteVista`
+- [x] Sin rastros de depuracion (`print` eliminado) y estilo de firmas corregido
 
 Validaciones realizadas (datos ficticios, sin red):
 
@@ -87,17 +91,58 @@ Errores de aprendizaje documentados:
 - [x] El REPL conserva modulos en `sys.modules`: hay que reiniciar el interprete o usar `importlib.reload`
 - [x] Diferencia entre `Response` crudo, `Bundle` y `Patient`: el mapper solo recibe el `Patient`
 
+### 0.4 - Servicio de pacientes (EN CURSO)
+
+El servicio es una **clase** (`PacienteService`), no funciones sueltas, porque tiene dependencias inyectables: el cliente HTTP y el proveedor de token.
+
+Codigo construido:
+
+- [x] `ErrorConsultaIHCE` -> falla de transporte o de formato al hablar con el mecanismo
+- [x] `PacienteNoEncontrado` -> la consulta se completo pero no devolvio pacientes
+- [x] `_extraer_pacientes(payload)` -> acepta un `Bundle` y tambien un `Patient` suelto; cualquier otro `resourceType` es `ErrorConsultaIHCE`
+- [x] `PacienteService.__init__(self, cliente, token)` -> guarda `self._cliente` y `self._token` (la funcion, no el token)
+- [x] `PacienteService._consultar(self, path, body) -> dict` -> token + `post` + status 2xx + JSON, con dos `try` angostos
+
+Pendiente de validacion:
+
+- [ ] `_consultar` **nunca se ha ejecutado**. Importa sin error, pero no hay prueba de comportamiento.
+- [ ] Script de cliente falso (`probar_consultar.py`, fuera de Git) con 4 casos:
+  1. 200 + `Bundle` vacio -> devuelve el `dict`
+  2. 502 -> `ErrorConsultaIHCE` con status + path + cuerpo recortado
+  3. 200 + cuerpo no JSON (HTML) -> `ErrorConsultaIHCE`
+  4. timeout de red -> `ErrorConsultaIHCE` **sin tocar `response`**
+
+Pendiente de implementacion:
+
+- [ ] `buscar_similar(tipo, numero, humano)` -> `list[PacienteVista]`: `ConsultaPacienteSimilar` -> `crear_json_fhir()` -> `_consultar()` -> `_extraer_pacientes()` -> `PacienteNoEncontrado` si la lista viene vacia -> `mapear_paciente()` por cada recurso
+- [ ] `obtener_exacto(tipo, numero, humano)` -> `PacienteVista`: payload `Patient` suelto, exactamente uno
+- [ ] Borrar la funcion antigua `buscar_paciente_similar()` (lineas 36-52), incompleta y sin uso
+- [ ] `servicio = PacienteService(fhir)` a nivel de modulo
+- [ ] `__init__`: valor por defecto del proveedor de token (`obtener_token_valido`, **sin parentesis**)
+
+Decisiones de diseno (cerradas):
+
+- El servicio es la unica capa que conoce la red; el mapper no hace HTTP.
+- Dos excepciones de dominio distintas: transporte/formato vs. "no vino ningun paciente".
+- `try` angostos: uno por operacion que puede fallar (la llamada y el parseo JSON).
+- Exito = familia **2xx**, no `== 200`.
+- Mensaje de error con status + `path` + `response.text[:300]` (recortado, nunca completo).
+- `raise ... from e` en toda traduccion de excepcion, para conservar la causa original.
+- `_consultar` es privado: nadie fuera de la clase lo llama.
+
+Errores de aprendizaje documentados (0.4):
+
+- [x] `except` de red que usaba `response` -> `UnboundLocalError`: si `post` falla, `response` nunca se asigna
+- [x] Condicion de status invertida (`if status in (2xx): raise`)
+- [x] Enumerar codigos de exito en una tupla es fragil; la familia 2xx es el contrato
+- [x] `except HTTPError` no atrapa `Timeout` ni `ConnectionError`: son hermanos, no hijos
+- [x] `from e` conserva el traceback original; sin el, el mensaje dice "During handling..."
+- [x] Anidacion: la `def` de un metodo va a 4 espacios y su cuerpo a 8. Sin la linea `class`, todo parece plano
+- [x] Diferencia entre la funcion `obtener_token_valido` y su resultado `obtener_token_valido()`
+
 ---
 
 ## QUE FALTA
-
-### 0.4 - Servicio de pacientes (NO INICIADO)
-
-- [ ] `app/services/paciente_service.py` con `buscar_paciente_similar(...)` -> `list[PacienteVista]`
-- [ ] `app/services/paciente_service.py` con `consultar_paciente_exacto(...)` -> `PacienteVista`
-- [ ] Recorrer `Bundle.entry[]` y aplicar `mapear_paciente` a cada `resource`
-- [ ] Manejo explicito de `Bundle` vacio (`total = 0`)
-- [ ] Manejo explicito de error HTTP y de respuesta no JSON (sin `except` amplios)
 
 ### 0.5 - API + UI (NO INICIADO)
 
@@ -108,11 +153,14 @@ Errores de aprendizaje documentados:
 
 ### Pendientes transversales
 
-- [ ] Quitar el `print("revisando:", ...)` de depuracion en `_valor_extension`
-- [ ] Corregir estilo: `def _documento (identifiers...)` -> `def _documento(identifiers...)`
-- [ ] Commit del incremento 0.3
-- [ ] Confirmar que `.env` sigue fuera de Git
-- [ ] `app/schemas/fhir/` esta creado pero vacio: decidir si se usa para modelos de recursos FHIR o se elimina
+- [x] Quitar el `print("revisando:", ...)` de `_valor_extension`
+- [x] Corregir estilo: `def _documento (` -> `def _documento(`
+- [x] Eliminar imports muertos en `paciente_service.py`
+- [x] Commit del incremento 0.3 (`6369381`)
+- [ ] Normalizar `birthDate` a `YYYY-MM-DD` en el mapper (FHIR permite `2026-11` y `2026`)
+- [ ] Confirmar que `.env` sigue fuera de Git (verificado: no aparece en `git ls-files`)
+- [ ] Decidir si `app/schemas/fhir/` (creado y vacio) se usa para modelos FHIR o se elimina
+- [ ] Convencion de commits: `6369381` no usa prefijo (`feat:`, `docs:`); retomarla desde el proximo
 
 ---
 
@@ -127,7 +175,7 @@ Errores de aprendizaje documentados:
 | segundo_nombre | given[1:] unido con espacio | None si vacio |
 | primer_apellido | _family.extension[ExtensionFathersFamilyName].valueString | fallback: family completo |
 | segundo_apellido | _family.extension[ExtensionMothersFamilyName].valueString | fallback: None |
-| fecha_nacimiento | Patient.birthDate | directo YYYY-MM-DD |
+| fecha_nacimiento | Patient.birthDate | directo YYYY-MM-DD (normalizacion pendiente) |
 | sexo | Patient.gender | codigo crudo, sin traducir |
 | nombre_completo | propiedad calculada | concatenacion de nombres y apellidos |
 
@@ -147,10 +195,18 @@ URLs confirmadas:
 2. Validar que el entorno sigue sano:
 
 ```bash
-py -c "from app.schemas.request.paciente_request import ConsultaPacienteSimilar, ConsultaPacienteExacto; from app.schemas.view.paciente_view import PacienteVista; from app.integrations.ihce.paciente_mapper import mapear_paciente; print('IMPORTS OK')"
+py -c "from app.services.paciente_service import PacienteService, ErrorConsultaIHCE, PacienteNoEncontrado; from app.integrations.ihce.paciente_mapper import mapear_paciente; print('IMPORTS OK')"
 ```
 
-3. Continuar por **0.4** (servicio de pacientes).
+3. Confirmar que la clase expone lo esperado:
+
+```bash
+py -c "from app.services.paciente_service import PacienteService; print([n for n in dir(PacienteService) if not n.startswith('__')])"
+```
+
+Resultado esperado hoy: `['_consultar']`. Cuando 0.4 cierre: `['_consultar', 'buscar_similar', 'obtener_exacto']`.
+
+4. Continuar por **0.4**: validar `_consultar` con cliente falso y luego `buscar_similar`.
 
 ---
 
@@ -166,3 +222,4 @@ py -c "from app.schemas.request.paciente_request import ConsultaPacienteSimilar,
 - `name` es 0..*: filtrar por `use=official` y caer al primero solo como fallback
 - La fuente es autoritativa (maestro de personas / RNEC), pero "autoritativo" no implica "siempre completo": el fallback cubre ausencia, no desconfianza
 - Mientras se trabaja en REPL, reiniciar el interprete tras editar un modulo ya importado
+- Un metodo no se da por cerrado hasta que tiene su prueba con cliente falso (sin red)
