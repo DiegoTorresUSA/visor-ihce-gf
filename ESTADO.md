@@ -2,7 +2,8 @@
 
 ## Última actualización
 Fecha: 2026-11-12
-Commit de referencia: `6369381` (0.3 completo + 0.4 parcial)
+Commit de referencia: `1dda2f6` (refactor: limpieza del servicio y del mapper)
+Cambios locales al cierre de esta sesion: `ESTADO.md` modificado y `probar_consultar.py` en stage (prueba manual, fuera de `app/`)
 
 ## Resumen de un vistazo
 
@@ -11,12 +12,12 @@ Commit de referencia: `6369381` (0.3 completo + 0.4 parcial)
 | 0.1 Infraestructura base (config, auth, HTTP, /health) | CERRADO |
 | 0.2 Cliente IHCE + contrato de vista de paciente | CERRADO |
 | 0.3 Mapper `Patient -> PacienteVista` | CERRADO |
-| 0.4 Servicio de pacientes (Bundle -> lista de vistas) | EN CURSO (1 de 3 métodos) |
+| 0.4 Servicio de pacientes (Bundle -> lista de vistas) | EN CURSO (1 de 3 métodos, validado) |
 | 0.5 API + UI (router y plantillas) | NO INICIADO |
 
-Ultima accion realizada: limpieza del servicio y del mapper (imports muertos, `print` de depuracion, estilo de `_documento`) y documentacion del estado real de 0.4.
+Ultima accion realizada: `_consultar` validado con cliente falso (5 de 5 casos, sin red). Tanda 1 de 0.4 cerrada.
 
-Proximo paso: validar `_consultar` con un cliente falso (4 casos, sin red) y luego implementar `buscar_similar`.
+Proximo paso: tanda 2, `buscar_similar`. Antes de escribir hay dos decisiones abiertas: de donde sale el `path` (settings / inyectado en el constructor / `patient.py`) y si el mapeo usa comprension de lista o `for` con `append`.
 
 ---
 
@@ -103,20 +104,29 @@ Codigo construido:
 - [x] `PacienteService.__init__(self, cliente, token)` -> guarda `self._cliente` y `self._token` (la funcion, no el token)
 - [x] `PacienteService._consultar(self, path, body) -> dict` -> token + `post` + status 2xx + JSON, con dos `try` angostos
 
-Pendiente de validacion:
+Validacion de `_consultar` (CERRADA):
 
-- [ ] `_consultar` **nunca se ha ejecutado**. Importa sin error, pero no hay prueba de comportamiento.
-- [ ] Script de cliente falso (`probar_consultar.py`, fuera de Git) con 4 casos:
-  1. 200 + `Bundle` vacio -> devuelve el `dict`
-  2. 502 -> `ErrorConsultaIHCE` con status + path + cuerpo recortado
-  3. 200 + cuerpo no JSON (HTML) -> `ErrorConsultaIHCE`
-  4. timeout de red -> `ErrorConsultaIHCE` **sin tocar `response`**
+Script `probar_consultar.py` en la raiz, fuera de Git. Usa un `ClienteFalso` con metodo `post`, un `token_falso()` y `requests.Response` reales fabricados sin red. Resultado: 5 de 5.
 
-Pendiente de implementacion:
+- [x] 200 + `Bundle` vacio -> devuelve el `dict`
+- [x] 502 -> `ErrorConsultaIHCE` con status + path + cuerpo recortado
+- [x] 200 + cuerpo no JSON (HTML) -> `ErrorConsultaIHCE`
+- [x] timeout de red -> `ErrorConsultaIHCE` **sin tocar `response`** (delata el `UnboundLocalError` de la version rota)
+- [x] 300 -> `ErrorConsultaIHCE` (borde de la familia 2xx)
+
+Nota: en la consola de PowerShell la tilde de `fallo` sale mal renderizada. Es la codepage, no el codigo.
+
+Pendiente de implementacion (tanda 2, `buscar_similar`):
 
 - [ ] `buscar_similar(tipo, numero, humano)` -> `list[PacienteVista]`: `ConsultaPacienteSimilar` -> `crear_json_fhir()` -> `_consultar()` -> `_extraer_pacientes()` -> `PacienteNoEncontrado` si la lista viene vacia -> `mapear_paciente()` por cada recurso
-- [ ] `obtener_exacto(tipo, numero, humano)` -> `PacienteVista`: payload `Patient` suelto, exactamente uno
+- [ ] Decision: origen del `path` del endpoint (recomendado: `settings.IHCE_CONSULTAR_PACIENTE_SIMILAR` dentro del servicio)
+- [ ] Decision: mapeo con comprension de lista o `for` + `append`
+- [ ] Mensaje de `PacienteNoEncontrado` sin numero de documento (dato personal en logs)
 - [ ] Borrar la funcion antigua `buscar_paciente_similar()` (lineas 36-52), incompleta y sin uso
+
+Pendiente de implementacion (tanda 3, cierre de 0.4):
+
+- [ ] `obtener_exacto(tipo, numero, humano)` -> `PacienteVista`: payload `Patient` suelto, exactamente uno
 - [ ] `servicio = PacienteService(fhir)` a nivel de modulo
 - [ ] `__init__`: valor por defecto del proveedor de token (`obtener_token_valido`, **sin parentesis**)
 
@@ -161,6 +171,10 @@ Errores de aprendizaje documentados (0.4):
 - [ ] Confirmar que `.env` sigue fuera de Git (verificado: no aparece en `git ls-files`)
 - [ ] Decidir si `app/schemas/fhir/` (creado y vacio) se usa para modelos FHIR o se elimina
 - [ ] Convencion de commits: `6369381` no usa prefijo (`feat:`, `docs:`); retomarla desde el proximo
+- [ ] `patient.py` queda redundante cuando el servicio use `settings` + `_consultar`: decidir si se reduce a constantes o se elimina
+- [ ] Convertir `probar_consultar.py` en `tests/test_paciente_service.py` con `pytest` y `parametrize` (incremento propio, no mezclar con 0.4)
+- [x] Commit de limpiezas de codigo: `1dda2f6`
+- [ ] Commit de este documento (`docs`) y decision sobre `probar_consultar.py` (commitear como prueba manual o sacarlo de Git)
 
 ---
 
@@ -206,7 +220,13 @@ py -c "from app.services.paciente_service import PacienteService; print([n for n
 
 Resultado esperado hoy: `['_consultar']`. Cuando 0.4 cierre: `['_consultar', 'buscar_similar', 'obtener_exacto']`.
 
-4. Continuar por **0.4**: validar `_consultar` con cliente falso y luego `buscar_similar`.
+4. Re-ejecutar la validacion de `_consultar` si se toco el servicio:
+
+```bash
+py probar_consultar.py
+```
+
+5. Continuar por **0.4, tanda 2**: `buscar_similar`.
 
 ---
 
