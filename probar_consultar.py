@@ -1,9 +1,34 @@
 import requests
+import json
 
-from app.services.paciente_service import PacienteService, ErrorConsultaIHCE
+from app.services.paciente_service import PacienteService, ErrorConsultaIHCE, PacienteNoEncontrado
 
 PATH = "/rda/Patient/$consultar-paciente-similar"
 BODY = {"resourceType": "Parameters", "parameter": []}
+
+BUNDLE_CON_UN_PACIENTE = {
+    "resourceType": "Bundle",
+    "total": 1,
+    "entry": [
+        {"resource": {
+            "resourceType": "Patient",
+            "id": "pac-1",
+            "identifier": [{
+                "use": "official",
+                "type": {"coding": [{
+                    "system": "https://fhir.minsalud.gov.co/rda/CodeSystem/ColombianPersonIdentifier",
+                    "code": "CC",
+                }]},
+                "value": "12345678",
+            }],
+            "name": [{
+                "use": "official",
+                "family": "Pérez",
+                "given": ["Juan"],
+            }],
+        }},
+    ],
+}
 
 def fabricar_response(status: int, cuerpo:str) -> requests.Response:
     """Crea un Response real de requests, pero sin pasar por la red."""
@@ -39,8 +64,29 @@ def ejecutar(nombre:str, cliente:ClienteFalso) -> None:
     except ErrorConsultaIHCE as e:
         print(f"[{nombre}] ErrorConsultaIHCE -> {e}")
 
+def probar_buscar_similar():
+    cliente = ClienteFalso(response=fabricar_response(
+        200, '{"resourceType": "Bundle", "total": 0, "entry": []}'))
+    servicio = PacienteService(cliente, token_falso)
+    try:
+        servicio.buscar_similar("CC", "12345678", "juan@correo.com")
+        print("[parada 4] NO LANZÓ (mal)")
+    except PacienteNoEncontrado as e:
+        print("[parada 4] PacienteNoEncontrado OK ->", e)
+
+
+def probar_resultados():
+    cliente = ClienteFalso(response=fabricar_response(
+        200, json.dumps(BUNDLE_CON_UN_PACIENTE)))
+    servicio = PacienteService(cliente, token_falso)
+    vistas = servicio.buscar_similar("CC", "12345678", "juan@correo.com")
+    print("[parada 5] cantidad:", len(vistas))
+    for vista in vistas:
+        print("   ", vista.nombre_completo, "|", vista.tipo_documento, vista.numero_documento)
 
 if __name__ == "__main__":
+    probar_buscar_similar()
+    probar_resultados()
     ejecutar(
         "1. 200 + Bundle",
         ClienteFalso(response=fabricar_response(
@@ -65,6 +111,4 @@ if __name__ == "__main__":
         ClienteFalso(response=fabricar_response(
             300, '{"message": "multiple choices"}')),
     )
-
-
 
