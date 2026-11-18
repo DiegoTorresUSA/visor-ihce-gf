@@ -1,4 +1,5 @@
 import json
+from app.core.config import settings
 from app.core.token_manager import obtener_token_valido
 from app.integrations.ihce.patient import consultar_paciente_exacto, consultar_paciente_similar
 from app.integrations.ihce.paciente_mapper import mapear_paciente
@@ -33,25 +34,6 @@ def _extraer_pacientes(payload: dict) -> list[dict]:
             ]
 
 
-def buscar_paciente_similar(tipo_documento: str, numero_documento: str, human_user: str) -> list[PacienteVista]:
-    """
-        Consulta $consultar-paciente-similar y devuelve los pacientes encontrados.
-        Lanza ErrorConsultaIHCE si no se pudo consultar.
-    """
-    #construyo la peticion
-    #convertirlo a parameters
-    #obtengo el token
-    #llamar al mecanismo
-    #valido el status
-    #capturo los datos convertidos a JSON
-    #proceso lo que nececesito
-    #los mapeo
-    #devuelvo el paciente
-
-    p = ConsultaPacienteSimilar(tipo_documento, numero_documento, human_user)
-    body = p.crear_json_fhir()
-
-
 class PacienteService:
     def __init__(self, cliente, token):
         self._cliente = cliente
@@ -72,3 +54,33 @@ class PacienteService:
             return response.json()
         except json.decoder.JSONDecodeError as e:
             raise ErrorConsultaIHCE(f"respuesta no es un JSON de {path}: {e}") from e
+
+
+    def buscar_similar(self, tipo_documento: str, numero_documento: str, usuario_humano: str) -> list[PacienteVista]:
+        #Parada 1 - Armo el sobre
+        consulta = ConsultaPacienteSimilar(
+            tipo_documento=tipo_documento,
+            numero_documento=numero_documento,
+            usuario_humano=usuario_humano
+        )
+        body = consulta.crear_json_fhir()
+
+
+        #Parada 2 - Pedirle la carpeta al mensajero
+        payload = self._consultar(settings.IHCE_CONSULTAR_PACIENTE_SIMILAR, body)
+        # Parada 3 - Abrir la carpeta
+        pacientes = _extraer_pacientes(payload)
+        # Parada 4 - Busqueda de pacientes
+        if not pacientes:
+            raise PacienteNoEncontrado("la consulta no devolvió pacientes para los datos enviados")
+        #Parada 5 — traducir y devolver
+        vistas = []
+        for patient in pacientes:
+            vistas.append(mapear_paciente(patient))
+        return vistas
+
+
+
+
+
+
