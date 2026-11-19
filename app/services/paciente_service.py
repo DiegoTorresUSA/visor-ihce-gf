@@ -1,7 +1,7 @@
 import json
 from app.core.config import settings
 from app.core.token_manager import obtener_token_valido
-from app.integrations.ihce.patient import consultar_paciente_exacto, consultar_paciente_similar
+from app.core.http_client import fhir
 from app.integrations.ihce.paciente_mapper import mapear_paciente
 from app.schemas.request.paciente_request import ConsultaPacienteExacto, ConsultaPacienteSimilar
 from app.schemas.view.paciente_view import PacienteVista
@@ -35,7 +35,7 @@ def _extraer_pacientes(payload: dict) -> list[dict]:
 
 
 class PacienteService:
-    def __init__(self, cliente, token):
+    def __init__(self, cliente, token=obtener_token_valido):
         self._cliente = cliente
         self._token = token
 
@@ -64,8 +64,6 @@ class PacienteService:
             usuario_humano=usuario_humano
         )
         body = consulta.crear_json_fhir()
-
-
         #Parada 2 - Pedirle la carpeta al mensajero
         payload = self._consultar(settings.IHCE_CONSULTAR_PACIENTE_SIMILAR, body)
         # Parada 3 - Abrir la carpeta
@@ -80,7 +78,21 @@ class PacienteService:
         return vistas
 
 
+    def buscar_exacto(self, tipo_documento: str, numero_documento: str, usuario_humano: str) -> PacienteVista:
+        # Parada 1 - Armo el sobre
+        consulta_exacto = ConsultaPacienteExacto(
+            tipo_documento=tipo_documento,
+            numero_documento=numero_documento,
+            usuario_humano=usuario_humano
+        )
+        body = consulta_exacto.crear_json_fhir()
+        #Parada 2 - Pedirle la carpeta al mensajero
+        payload = self._consultar(settings.IHCE_CONSULTAR_PACIENTE_EXACTO, body)
+        # Parada 3 - Abrir la carpeta
+        pacientes = _extraer_pacientes(payload)
+        # Parada 4 - Busqueda de pacientes
+        if not pacientes:
+            raise PacienteNoEncontrado("la consulta no devolvió pacientes para los datos enviados")
+        return mapear_paciente(pacientes[0])
 
-
-
-
+servicio = PacienteService(fhir)
