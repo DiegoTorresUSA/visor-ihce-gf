@@ -45,8 +45,10 @@ class ClienteFalso:
     def __init__(self, response=None, error=None):
         self._response = response
         self._error = error
+        self.paths = []
 
     def post(self, token:str, path:str, json_body=None, params=None):
+        self.paths.append(path)
         if self._error is not None:
             raise self._error
         return self._response
@@ -65,6 +67,7 @@ def ejecutar(nombre:str, cliente:ClienteFalso) -> None:
         print(f"[{nombre}] ErrorConsultaIHCE -> {e}")
 
 def probar_buscar_similar():
+    print("prueba de similar--------")
     cliente = ClienteFalso(response=fabricar_response(
         200, '{"resourceType": "Bundle", "total": 0, "entry": []}'))
     servicio = PacienteService(cliente, token_falso)
@@ -73,9 +76,10 @@ def probar_buscar_similar():
         print("[parada 4] NO LANZÓ (mal)")
     except PacienteNoEncontrado as e:
         print("[parada 4] PacienteNoEncontrado OK ->", e)
-
+    print("fin de similar--------")
 
 def probar_resultados():
+    print("prueba de general--------")
     cliente = ClienteFalso(response=fabricar_response(
         200, json.dumps(BUNDLE_CON_UN_PACIENTE)))
     servicio = PacienteService(cliente, token_falso)
@@ -83,10 +87,23 @@ def probar_resultados():
     print("[parada 5] cantidad:", len(vistas))
     for vista in vistas:
         print("   ", vista.nombre_completo, "|", vista.tipo_documento, vista.numero_documento)
+    print("fin de general--------")
+
+def probar_resultados_exacto():
+    print("prueba de exacto--------")
+    cliente = ClienteFalso(response=fabricar_response(
+        200, json.dumps(BUNDLE_CON_UN_PACIENTE["entry"][0]["resource"])))
+    servicio = PacienteService(cliente, token_falso)
+    vista = servicio.buscar_exacto("CC", "12345678", "juan@correo.com")
+    print("   ", vista.nombre_completo, "|", vista.tipo_documento, vista.numero_documento)
+    print("    path usado:", cliente.paths[-1])
+    print("fin de exacto--------")
+
 
 if __name__ == "__main__":
     probar_buscar_similar()
     probar_resultados()
+    probar_resultados_exacto()
     ejecutar(
         "1. 200 + Bundle",
         ClienteFalso(response=fabricar_response(
