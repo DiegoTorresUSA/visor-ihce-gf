@@ -2,8 +2,8 @@
 
 ## Última actualización
 Fecha: 2026-11-18
-Commit de referencia: `60b1393` (docs: fix test script content and update status)
-Cambios locales sin commitear al cierre de esta sesion: `app/services/paciente_service.py` (`buscar_similar` + borrado de la funcion antigua) y `probar_consultar.py` (dos pruebas nuevas)
+Commit de referencia: `32711db` (docs: update status after buscar_similar)
+Cambios locales sin commitear al cierre de esta sesion: `app/services/paciente_service.py` (metodo `buscar_exacto`, default del proveedor de token y singleton `servicio`) y `probar_consultar.py` (prueba de `buscar_exacto` y registro de `paths` en el cliente falso)
 
 ## Resumen de un vistazo
 
@@ -12,12 +12,12 @@ Cambios locales sin commitear al cierre de esta sesion: `app/services/paciente_s
 | 0.1 Infraestructura base (config, auth, HTTP, /health) | CERRADO |
 | 0.2 Cliente IHCE + contrato de vista de paciente | CERRADO |
 | 0.3 Mapper `Patient -> PacienteVista` | CERRADO |
-| 0.4 Servicio de pacientes (Bundle -> lista de vistas) | EN CURSO (2 de 3 metodos, validados) |
-| 0.5 API + UI (router y plantillas) | NO INICIADO |
+| 0.4 Servicio de pacientes (3 de 3 metodos, validados) | CERRADO (pendiente de commit) |
+| 0.5 API + UI (router y plantillas) | SIGUIENTE |
 
-Ultima accion realizada: `buscar_similar` implementado y validado con cliente falso (`Bundle` vacio -> `PacienteNoEncontrado`; `Bundle` con un `Patient` -> una `PacienteVista` con nombre y documento). Tanda 2 de 0.4 cerrada.
+Ultima accion realizada: `buscar_exacto` implementado y validado con cliente falso (un `Patient` suelto -> una `PacienteVista`; el path registrado es `/Patient/$consultar-paciente-exacto`). Ademas, `__init__` ya tiene `token=obtener_token_valido` por defecto y existe la instancia unica `servicio = PacienteService(fhir)`.
 
-Proximo paso: tanda 3, cierre de 0.4 (`obtener_exacto`, singleton `servicio` y valor por defecto del proveedor de token). Despues, una prueba real contra el APIM antes de pasar a 0.5.
+Proximo paso: commit de cierre de 0.4 y arranque de 0.5 (router `app/api/routers/pacientes.py`, `home.py`, plantillas y registro en `main.py`). La prueba real contra el APIM con datos ficticios queda como verificacion opcional antes del commit.
 
 ---
 
@@ -45,6 +45,7 @@ Proximo paso: tanda 3, cierre de 0.4 (`obtener_exacto`, singleton `servicio` y v
 Codigo:
 
 - [x] `app/integrations/ihce/patient.py` con `consultar_paciente_similar()` y `consultar_paciente_exacto()`, usando `fhir.post(token, path, json_body=...)`
+  - Nota: desde 0.4 estas funciones quedaron **sin uso**; el servicio arma el body y llama `_consultar`. No borrar todavia: primero hay que quitar el import muerto del servicio
 - [x] `app/schemas/request/paciente_request.py` con `ConsultaPacienteSimilar` y `ConsultaPacienteExacto` (ambos con `usuario_humano` y `crear_json_fhir()`)
 - [x] `app/schemas/view/paciente_view.py` con `PacienteVista` (9 campos `Optional[str]`)
 
@@ -92,7 +93,7 @@ Errores de aprendizaje documentados:
 - [x] El REPL conserva modulos en `sys.modules`: hay que reiniciar el interprete o usar `importlib.reload`
 - [x] Diferencia entre `Response` crudo, `Bundle` y `Patient`: el mapper solo recibe el `Patient`
 
-### 0.4 - Servicio de pacientes (EN CURSO)
+### 0.4 - Servicio de pacientes (CERRADO)
 
 El servicio es una **clase** (`PacienteService`), no funciones sueltas, porque tiene dependencias inyectables: el cliente HTTP y el proveedor de token.
 
@@ -101,7 +102,7 @@ Codigo construido:
 - [x] `ErrorConsultaIHCE` -> falla de transporte o de formato al hablar con el mecanismo
 - [x] `PacienteNoEncontrado` -> la consulta se completo pero no devolvio pacientes
 - [x] `_extraer_pacientes(payload)` -> acepta un `Bundle` y tambien un `Patient` suelto; cualquier otro `resourceType` es `ErrorConsultaIHCE`
-- [x] `PacienteService.__init__(self, cliente, token)` -> guarda `self._cliente` y `self._token` (la funcion, no el token)
+- [x] `PacienteService.__init__(self, cliente, token=obtener_token_valido)` -> guarda `self._cliente` y `self._token` (la funcion, no el token). Sin parentesis: el token se pide cuando se usa, no al importar
 - [x] `PacienteService._consultar(self, path, body) -> dict` -> token + `post` + status 2xx + JSON, con dos `try` angostos
 
 Validacion de `_consultar` (CERRADA):
@@ -135,12 +136,30 @@ Validacion de `buscar_similar` (CERRADA):
 - [x] `Bundle` con un `Patient` -> 1 `PacienteVista` con `nombre_completo` "Juan Perez" y documento `CC 12345678`
 - [x] Los 5 casos de `_consultar` siguen pasando despues del cambio
 
-Pendiente de implementacion (tanda 3, cierre de 0.4):
+Implementacion de `buscar_exacto` (CERRADA):
 
-- [ ] `obtener_exacto(tipo, numero, humano)` -> `PacienteVista`: payload `Patient` suelto, exactamente uno
-- [ ] `servicio = PacienteService(fhir)` a nivel de modulo
-- [ ] `__init__`: valor por defecto del proveedor de token (`obtener_token_valido`, **sin parentesis**)
-- [ ] Prueba real contra el APIM con datos ficticios, una vez, para confirmar el camino completo
+- [x] Parada 1: `ConsultaPacienteExacto(...)` + `crear_json_fhir()`
+- [x] Parada 2: `self._consultar(settings.IHCE_CONSULTAR_PACIENTE_EXACTO, body)`
+- [x] Parada 3: `_extraer_pacientes(payload)` -> lista de `Patient` (acepta el `Patient` suelto)
+- [x] Parada 4: si la lista viene vacia -> `PacienteNoEncontrado`
+- [x] Cierre: `mapear_paciente(pacientes[0])` -> un solo `PacienteVista`, porque el endpoint exacto no devuelve conjuntos
+- [x] Nombre `buscar_exacto`, paralelo a `buscar_similar` (no `obtener_exacto`)
+- [x] Se acepta la duplicacion de las dos lineas de armado del body entre ambos metodos (regla de tres)
+
+Validacion de `buscar_exacto` (CERRADA):
+
+- [x] `Patient` suelto -> 1 `PacienteVista` con `nombre_completo` "Juan Perez" y documento `CC 12345678`
+- [x] El cliente falso registra el path y se confirma `/Patient/$consultar-paciente-exacto` (el similar usa `/rda/Patient/...`)
+- [x] Los 5 casos de `_consultar` y las pruebas de `buscar_similar` siguen pasando
+
+Cierre del incremento (CERRADO):
+
+- [x] `servicio = PacienteService(fhir)` a nivel de modulo, al final del archivo (la clase se define antes de instanciarse)
+- [x] `from app.core.http_client import fhir` en la cabecera
+- [x] Verificado: `type(servicio).__name__ == "PacienteService"`, `_cliente` es `FHIRHttpClient` y `callable(servicio._token)` es `True`
+- [x] Verificado: `dir(PacienteService)` -> `['_consultar', 'buscar_exacto', 'buscar_similar']`
+- [x] Importar el modulo **no** dispara una llamada a Azure (el default guarda la funcion)
+- [ ] Prueba real contra el APIM con datos ficticios, una vez (opcional, ya no bloquea el cierre)
 
 Decisiones de diseno (cerradas):
 
@@ -151,6 +170,10 @@ Decisiones de diseno (cerradas):
 - Mensaje de error con status + `path` + `response.text[:300]` (recortado, nunca completo).
 - `raise ... from e` en toda traduccion de excepcion, para conservar la causa original.
 - `_consultar` es privado: nadie fuera de la clase lo llama.
+- El `path` sale de `settings` dentro del servicio: el router nunca ve endpoints del mecanismo.
+- Inyeccion de dependencias con valor por defecto: la dependencia real es el default; las pruebas la reemplazan.
+- El router de 0.5 solo importara `servicio`; no sabra nada de Azure, tokens ni `fhir`.
+- `servicio` es una instancia unica de modulo (singleton practico de Python): conserva la cache de token del `token_manager` y la configuracion del cliente HTTP.
 
 Errores de aprendizaje documentados (0.4):
 
@@ -165,17 +188,34 @@ Errores de aprendizaje documentados (0.4):
 - [x] Un `"""..."""` que no es la primera linea de la funcion no es docstring: para separar bloques, usar `#`
 - [x] El `if __name__ == "__main__":` va al final del archivo; las funciones se definen antes de usarse (Python lee de arriba abajo)
 - [x] Nombrar el parametro igual que el campo del esquema evita dos nombres para el mismo dato
+- [x] Un valor por defecto que es una **funcion** se escribe sin parentesis: con parentesis se ejecuta al importar
+- [x] `servicio = PacienteService(fhir)` va despues de la clase: Python lee de arriba abajo y si no, `NameError`
+- [x] Diferencia entre "el nombre de la funcion" (`__defaults__` lo muestra como `<function ...>`) y "su resultado"
+- [x] Un cliente falso que ignora el `path` da una falsa sensacion de seguridad: registrar `paths` convierte la prueba en una verificacion real del endpoint
+- [x] Patrones en uso: arquitectura en capas, inyeccion de dependencias, adaptador (capa anticorrupcion) y fachada. No hay MVC ni Repository porque no hay base de datos
 
 ---
 
 ## QUE FALTA
 
-### 0.5 - API + UI (NO INICIADO)
+### 0.5 - API + UI (SIGUIENTE)
+
+Objetivo: exponer el servicio en una pantalla web minima (buscar por documento y ver resultados), sin que el router sepa nada de FHIR.
 
 - [ ] `app/api/routers/pacientes.py` (archivo existe pero esta vacio)
+  - [ ] `GET /pacientes` -> formulario de busqueda (HTML)
+  - [ ] `GET /pacientes/buscar` (o `POST`) -> llama `servicio.buscar_similar(...)` y renderiza una lista
+  - [ ] Traducir `PacienteNoEncontrado` y `ErrorConsultaIHCE` a mensajes de pantalla (no tracebacks)
+  - [ ] `GET /pacientes/{tipo}/{numero}` -> `servicio.buscar_exacto(...)` y ficha del paciente
 - [ ] `app/api/routers/home.py` (archivo existe pero esta vacio)
+  - [ ] `GET /` -> redireccion o portada
 - [ ] `app/templates/base.html` (archivo existe pero esta vacio) y plantillas en `pages/`, `partials/`, `components/` (carpetas vacias)
-- [ ] Registrar routers en `app/main.py` y montar Jinja2/estaticos
+  - [ ] `base.html` con daisyUI y bloque `{% block contenido %}`
+  - [ ] partial de resultados reutilizable (HTMX) y partial de mensaje de error
+- [ ] Registrar routers en `app/main.py`, montar Jinja2 y estaticos
+- [ ] El router solo importa `servicio`; nunca `fhir`, ni `settings`, ni `obtener_token_valido`
+
+Criterio de cierre: abrir la app en el navegador, buscar un documento ficticio y ver la ficha o el mensaje de "no encontrado", sin tocar el servicio.
 
 ### Pendientes transversales
 
@@ -184,13 +224,14 @@ Errores de aprendizaje documentados (0.4):
 - [x] Eliminar imports muertos en `paciente_service.py`
 - [x] Commit del incremento 0.3 (`6369381`)
 - [ ] Normalizar `birthDate` a `YYYY-MM-DD` en el mapper (FHIR permite `2026-11` y `2026`)
-- [ ] Confirmar que `.env` sigue fuera de Git (verificado: no aparece en `git ls-files`)
+- [x] Confirmar que `.env` sigue fuera de Git (verificado: no aparece en `git ls-files`)
 - [ ] Decidir si `app/schemas/fhir/` (creado y vacio) se usa para modelos FHIR o se elimina
 - [x] Convencion de commits retomada: `1dda2f6` y `60b1393` usan prefijo
-- [ ] `patient.py` quedo redundante: el servicio ya usa `settings` + `_consultar` y esas funciones no se llaman. Decidir si se reduce a constantes o se elimina
+- [ ] **`paciente_service.py` linea 5**: importa `consultar_paciente_exacto` y `consultar_paciente_similar` de `app/integrations/ihce/patient.py`, pero ya nadie los usa. Hay que borrar esa linea antes del commit de 0.4. Despues queda decidir si `patient.py` se reduce a constantes o se elimina
 - [ ] Convertir `probar_consultar.py` en `tests/test_paciente_service.py` con `pytest` y `parametrize` (incremento propio, no mezclar con 0.4)
 - [x] Commit de limpiezas de codigo: `1dda2f6`
 - [x] `probar_consultar.py` versionado: `60b1393`
+- [ ] Commit de cierre de 0.4: `feat(ihce): add buscar_exacto and shared service instance` + `test:` + `docs:` (en ese orden)
 - [ ] Commit de esta actualizacion de `ESTADO.md` (`docs:`)
 
 ---
@@ -235,7 +276,15 @@ py -c "from app.services.paciente_service import PacienteService, ErrorConsultaI
 py -c "from app.services.paciente_service import PacienteService; print([n for n in dir(PacienteService) if not n.startswith('__')])"
 ```
 
-Resultado esperado hoy: `['_consultar', 'buscar_similar']`. Cuando 0.4 cierre: `['_consultar', 'buscar_similar', 'obtener_exacto']`.
+Resultado esperado hoy: `['_consultar', 'buscar_exacto', 'buscar_similar']`.
+
+Comprobar tambien la instancia compartida:
+
+```bash
+py -c "from app.services.paciente_service import servicio; print(type(servicio).__name__, '|', type(servicio._cliente).__name__); print('token es funcion:', callable(servicio._token))"
+```
+
+Resultado esperado: `PacienteService | FHIRHttpClient` y `token es funcion: True`.
 
 4. Re-ejecutar la validacion del servicio si se toco:
 
@@ -243,7 +292,7 @@ Resultado esperado hoy: `['_consultar', 'buscar_similar']`. Cuando 0.4 cierre: `
 py probar_consultar.py
 ```
 
-5. Continuar por **0.4, tanda 3**: `obtener_exacto` y cierre del incremento.
+5. Continuar por **0.5 - API + UI**: router de pacientes, router de home, plantillas y registro en `main.py`.
 
 ---
 
