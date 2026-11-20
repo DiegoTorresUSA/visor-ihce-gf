@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     IHCE_ENVIAR_RDA_HOSPITALIZACION:str = Field(validation_alias="IHCE_ENVIAR_RDA_HOSPITALIZACION")
     IHCE_ENVIAR_RDA_URGENCIAS:str = Field(validation_alias="IHCE_ENVIAR_RDA_URGENCIAS")
     IHCE_NOTA_ACLARATORIA:str = Field(validation_alias="IHCE_NOTA_ACLARATORIA")
+    USUARIO_HUMANO: str = Field(validation_alias="IHCE_USUARIO_HUMANO")
 
     # 3. Propiedad calculada
     @property
