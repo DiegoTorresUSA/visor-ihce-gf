@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block contenido %}
+
+{% if pacientes %}
+<div class="mt-8 overflow-x-auto">
+    <table class="table table-zebra">
+        <thead>
+            <tr>
+                <th>Paciente</th>
+                <th>Documento</th>
+                <th>Nacimiento</th>
+                <th>Sexo</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in pacientes %}
+            <tr>
+                <td>{{ p.nombre_completo }}</td>
+                <td>{{ p.tipo_documento }} {{ p.numero_documento }}</td>
+                <td>{{ p.fecha_nacimiento or "—" }}</td>
+                <td>{{ p.sexo or "—" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<form method="post" action="/pacientes/buscar" class="card bg-base-100 shadow-md p-6 max-w-xl space-y-4">
+    <label class="form-control">
+        <span class="label-text">Tipo de documento</span>
+        <select name="tipo_documento" class="select select-bordered">
+            <option value="CC">Cédula de ciudadanía</option>
+            <option value="TI">Tarjeta de identidad</option>
+            <option value="RC">Registro civil</option>
+            <option value="CE">Cédula de extranjería</option>
+            <option value="PA">Pasaporte</option>
+        </select>
+    </label>
+
+    <label class="form-control">
+        <span class="label-text">Número de documento</span>
+        <input type="text" name="numero_documento" class="input input-bordered" required>
+    </label>
+
+    <button type="submit" class="btn btn-primary">Buscar</button>
+</form>
+{% endblock %}

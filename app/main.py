@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api.routers.home import router
+from app.api.routers import home, pacientes
 
 app = FastAPI(
     title="Visor IHCE + Gestion Farmaceutica - Colombia",
@@ -8,7 +8,8 @@ app = FastAPI(
     version="0.1.0",
 )
 
-app.include_router(router)
+app.include_router(home.router)
+app.include_router(pacientes.router)
 
 @app.get("/health", tags=["Health"])
 def health():
